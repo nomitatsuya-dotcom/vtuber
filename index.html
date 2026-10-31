@@ -41,6 +41,8 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .status{flex-basis:100%;font-size:12px;color:var(--muted);min-height:1.2em}
+.faces{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px}
+.faces button{padding:6px 10px;font-size:12px}
 body.clean .dock{display:none}
 video{display:none}
 </style>
@@ -53,6 +55,7 @@ video{display:none}
     <button id="bgBtn" type="button">背景：ナースステーション</button>
     <button id="mirrorBtn" type="button" aria-pressed="true">左右反転</button>
     <button id="cleanBtn" type="button">UIを隠す（H）</button>
+    <div class="faces" id="faces" role="group" aria-label="表情"></div>
     <div class="status" id="status">デモ再生中。カメラを使うとあなたの顔に合わせて動きます。</div>
   </div>
   <video id="video" playsinline muted></video>
@@ -71,6 +74,60 @@ const ASSETS = {"base": "data:image/webp;base64,UklGRvrZAgBXRUJQVlA4WAoAAAAQAAAA
   let tracking=false, mirror=true, landmarker=null, lastT=-1;
   let nextBlink=performance.now()+2000, blinkUntil=0, talkUntil=0, nextTalk=performance.now()+1200;
   const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+  const EXPR=[
+    {id:'normal', label:'1 ふつう'},
+    {id:'happy',  label:'2 にっこり', eyes:'closed', mouth:'m_smileWide'},
+    {id:'shock',  label:'3 びっくり', mouth:'m_wide', fx:['bang']},
+    {id:'shy',    label:'4 照れ',     eyes:'half', mouth:'m_small', fx:['blush']},
+    {id:'panic',  label:'5 焦り',     mouth:'m_mid', fx:['sweat']},
+    {id:'angry',  label:'6 怒り',     eyes:'half', mouth:'m_closed', fx:['anger']},
+    {id:'love',   label:'7 ラブ',     eyes:'closed', mouth:'m_smile', fx:['blush','heart']},
+    {id:'jito',   label:'8 ジト目',   eyes:'half', mouth:'m_closed'},
+  ];
+  let expr=EXPR[0], exprAt=0;
+  const facesEl=$('faces');
+  EXPR.forEach((e,i)=>{const b=document.createElement('button'); b.type='button'; b.textContent=e.label;
+    b.setAttribute('aria-pressed', i===0); b.addEventListener('click',()=>setExpr(i)); facesEl.appendChild(b);});
+  function setExpr(i){ expr=(expr===EXPR[i] && i!==0)?EXPR[0]:EXPR[i]; exprAt=performance.now();
+    [...facesEl.children].forEach((b,j)=>b.setAttribute('aria-pressed', EXPR[j]===expr)); }
+  function drawFx(t){
+    const age=(performance.now()-exprAt)/1000, pop=Math.min(1,age*6), fxs=expr.fx||[];
+    if(fxs.includes('blush')){
+      for(const [x,y] of [[262,478],[468,494]]){
+        const g=ctx.createRadialGradient(x,y,4,x,y,46); g.addColorStop(0,'rgba(255,110,130,.55)'); g.addColorStop(1,'rgba(255,110,130,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(x,y,48,26,0,0,7); ctx.fill();
+        ctx.strokeStyle='rgba(225,80,100,.55)'; ctx.lineWidth=3; ctx.lineCap='round';
+        for(let k=-1;k<=1;k++){ctx.beginPath(); ctx.moveTo(x+k*14-5,y+6); ctx.lineTo(x+k*14+5,y-6); ctx.stroke();}
+      }
+    }
+    if(fxs.includes('sweat')){
+      const y=372+((t*40)%60), x=575;
+      ctx.save(); ctx.globalAlpha=pop*(1-((t*40)%60)/80);
+      ctx.fillStyle='#bfe6ff'; ctx.strokeStyle='#3a7bc8'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(x,y-28); ctx.bezierCurveTo(x+16,y-6,x+18,y+12,x,y+14); ctx.bezierCurveTo(x-18,y+12,x-16,y-6,x,y-28); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(x-5,y+2,3,6,-.3,0,7); ctx.fill(); ctx.restore();
+    }
+    if(fxs.includes('anger')){
+      const x=600,y=250,s=pop*(1+Math.sin(t*10)*.06);
+      ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.strokeStyle='#e8343c'; ctx.lineWidth=9; ctx.lineCap='round';
+      for(let k=0;k<4;k++){ctx.save(); ctx.rotate(k*Math.PI/2); ctx.beginPath(); ctx.moveTo(10,-30); ctx.quadraticCurveTo(10,-10,30,-10); ctx.stroke(); ctx.restore();}
+      ctx.restore();
+    }
+    if(fxs.includes('bang')){
+      ctx.save(); ctx.translate(610,250); ctx.rotate(.15); ctx.scale(pop,pop);
+      ctx.fillStyle='#ffc21a'; ctx.strokeStyle='#8a4b00'; ctx.lineWidth=5;
+      for(const dx of [-18,18]){ctx.beginPath(); ctx.moveTo(dx-9,-50); ctx.lineTo(dx+9,-50); ctx.lineTo(dx+4,10); ctx.lineTo(dx-4,10); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(dx,30,9,0,7); ctx.fill(); ctx.stroke();}
+      ctx.restore();
+    }
+    if(fxs.includes('heart')){
+      for(let k=0;k<3;k++){
+        const p=((t*.5+k/3)%1), x=585+Math.sin((p+k)*6)*20+k*18, y=400-p*200, s=(.9+k*.2)*pop;
+        ctx.save(); ctx.globalAlpha=1-p; ctx.translate(x,y); ctx.scale(s,s); ctx.fillStyle='#ff5c8a'; ctx.strokeStyle='#fff'; ctx.lineWidth=4;
+        ctx.beginPath(); ctx.moveTo(0,14); ctx.bezierCurveTo(-34,-10,-14,-36,0,-18); ctx.bezierCurveTo(14,-36,34,-10,0,14); ctx.fill(); ctx.stroke(); ctx.restore();
+      }
+    }
+  }
   const setStatus=t=>statusEl.textContent=t;
 
   function pickMouth(j,s){
@@ -116,10 +173,13 @@ const ASSETS = {"base": "data:image/webp;base64,UklGRvrZAgBXRUJQVlA4WAoAAAAQAAAA
     ctx.scale(1-Math.abs(yaw)*.04, 1);
     ctx.translate(-435,-1000);
     if(img.base.complete) ctx.drawImage(img.base,0,0);
-    const eyeImg = cur.blink>.75 ? img.eyes_closed : cur.blink>.3 ? img.eyes_half : null;
+    let eyeImg = cur.blink>.75 ? img.eyes_closed : cur.blink>.3 ? img.eyes_half : null;
+    if(expr.eyes==='closed') eyeImg=img.eyes_closed;
+    else if(expr.eyes==='half' && !eyeImg) eyeImg=img.eyes_half;
     if(eyeImg && eyeImg.complete) ctx.drawImage(eyeImg,EYES[0],EYES[1]);
-    const m=img[pickMouth(cur.jaw,cur.smile)];
+    const m=img[(expr.mouth && cur.jaw<.25) ? expr.mouth : pickMouth(cur.jaw,cur.smile)];
     if(m&&m.complete){ctx.save(); ctx.translate(MOUTH_X,MOUTH_TOP+12); ctx.rotate(5*Math.PI/180); ctx.drawImage(m,-m.naturalWidth/2,-12); ctx.restore();}
+    drawFx(t);
     ctx.restore();
     requestAnimationFrame(frame);
   }
@@ -162,7 +222,8 @@ const ASSETS = {"base": "data:image/webp;base64,UklGRvrZAgBXRUJQVlA4WAoAAAAQAAAA
   $('mirrorBtn').addEventListener('click',e=>{mirror=!mirror;e.currentTarget.setAttribute('aria-pressed',mirror)});
   $('cleanBtn').addEventListener('click',()=>document.body.classList.add('clean'));
   stage.addEventListener('click',()=>document.body.classList.remove('clean'));
-  addEventListener('keydown',e=>{if(e.key==='h'||e.key==='H') document.body.classList.toggle('clean')});
+  addEventListener('keydown',e=>{if(e.key==='h'||e.key==='H') document.body.classList.toggle('clean');
+    const n=parseInt(e.key,10); if(n>=1&&n<=EXPR.length) setExpr(n-1); if(e.key==='0') setExpr(0);});
 })();
 </script>
 
